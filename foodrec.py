@@ -83,16 +83,20 @@ def get_categories_info_for_city(city: str) -> List[CategoryInfo]:
 def get_item_info(item_url: str, temp_num: int) -> Optional[ItemInfo]:
     # TODO: figure out why the item name isn't showing up in H1 unlike manually in Chrome, seems to show up in a span which is filter out
     # diningMode and pl were manually added to see if they make a difference
-    print(f'item_url {item_url}')
     full_url = f'{BASE_UE_URL}{item_url}&diningMode=DELIVERY&pl=JTdCJTIyYWRkcmVzcyUyMiUzQSUyMkNvdmFyaWFudC5haSUyMiUyQyUyMnJlZmVyZW5jZSUyMiUzQSUyMkNoSUpFdzRlTTBaX2hZQVJVY21OTmp4MlREbyUyMiUyQyUyMnJlZmVyZW5jZVR5cGUlMjIlM0ElMjJnb29nbGVfcGxhY2VzJTIyJTJDJTIybGF0aXR1ZGUlMjIlM0EzNy44NDExNTc2JTJDJTIybG9uZ2l0dWRlJTIyJTNBLTEyMi4yOTU4MTMxJTdE'
     item_res = requests.get(full_url, headers=BASE_HEADERS, allow_redirects=True)
     item_info = BeautifulSoup(item_res.text, features='html.parser')
+    print(f'full_url {full_url}')
+
     try:
         # title_elements = item_info.find_all('h1')
         # for title_element in title_elements:
         #     print("title_element", title_element)
-        with open(f"{temp_num}.txt", 'w') as f:
-            f.write(item_info.prettify())
+        # with open(f"{temp_num}.txt", 'w') as f:
+        #     f.write(item_info.prettify())
+        with open(f"{temp_num}.html", "w") as f:
+            f.write(str(item_info))
+
         # # Another filtering criteria
         # print("item_name_element", item_name_element)
         # print("item_name_element.parent", item_name_element.parent)
@@ -114,7 +118,7 @@ def get_restaurant_info(restaurant: RestaurantInfo) -> RestaurantInfo:
     menu_info = BeautifulSoup(restaurant_res.text, features='html.parser') 
     item_url_matches = menu_info.find_all('a', href=lambda href: href and href.startswith(restaurant.rel_url))
     menu = {}
-    limit = 30
+    limit = 10
     for i, item_url_element in tqdm(enumerate(item_url_matches)):
         # print("item_url_element", item_url_element)
         # TODO: limiting num for testing
@@ -146,6 +150,6 @@ def get_restaurants(city: str) -> List[RestaurantInfo]:
             w.writerows([tuple(restaurant) + (category.name,) for restaurant in restaurants])
 
 if __name__ == "__main__":
-    city = "Dublin"
+    city = "Emeryville"
     # city = input("Enter a city: ")
     get_restaurants(city)
