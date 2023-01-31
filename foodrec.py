@@ -13,6 +13,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
+from utils import GracefulKiller
 
 BASE_UE_URL = 'https://www.ubereats.com'
 BASE_HEADERS = {'User-Agent' : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'}
@@ -167,6 +168,7 @@ def setup_browser() -> webdriver.Chrome:
     return browser
 
 if __name__ == "__main__":
+    print("doing something in a loop ...")
     # cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
     cities = ["Emeryville"]
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
