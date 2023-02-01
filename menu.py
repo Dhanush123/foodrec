@@ -7,7 +7,7 @@ import concurrent.futures
 import sqlite3
 
 from bs4 import BeautifulSoup
-import persistqueue import SQLiteQueue
+import persistqueue
 import requests
 from tqdm import tqdm
 from selenium import webdriver
@@ -16,13 +16,21 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 
 
-from utils import BASE_HEADERS, BASE_UE_URL, CategoryInfo, GracefulKiller, ItemInfo, RestaurantInfo, get_db_con, setup_browser
+from utils import (
+    BASE_HEADERS,
+    BASE_UE_URL,
+    CategoryInfo,
+    GracefulKiller,
+    ItemInfo,
+    RestaurantInfo,
+    get_db_con,
+    setup_browser,
+)
 
 
 def get_queue_con() -> sqlite3.Connection:
     queue_path = Path("item_queue.db")
     return persistqueue.SQLiteQueue(queue_path, auto_commit=True, multithreading=True)
-
 
 
 def get_item(item: ItemInfo, browser: webdriver.Chrome) -> Optional[ItemInfo]:
@@ -51,6 +59,7 @@ def get_item(item: ItemInfo, browser: webdriver.Chrome) -> Optional[ItemInfo]:
         print(f"get_item exception: {e}")
         return None
 
+
 def save_item(restaurant: RestaurantInfo, db_con: sqlite3.Connection) -> None:
     try:
         if item_info is None:
@@ -70,6 +79,7 @@ def save_item(restaurant: RestaurantInfo, db_con: sqlite3.Connection) -> None:
         )
     except Exception as exc:
         print(f"href {href} future/db exception: {exc}")
+
 
 if __name__ == "__main__":
     with get_db_con() as con:
