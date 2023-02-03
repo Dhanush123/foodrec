@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 import signal
 import sqlite3
-from typing import NamedTuple, Optional
+from typing import List, NamedTuple, Optional
 
 import persistqueue
 from selenium import webdriver
@@ -73,7 +73,7 @@ def get_queue_con() -> persistqueue.SQLiteQueue:
 
 def get_db_con() -> sqlite3.Connection:
     db_path = Path("menu.db")
-    return sqlite3.connect(db_path)
+    return sqlite3.connect(db_path, check_same_thread=False)
 
 
 def create_db(db_con: sqlite3.Connection) -> None:
@@ -82,11 +82,13 @@ def create_db(db_con: sqlite3.Connection) -> None:
     )
     # TODO: add index on item_name + is_item_hydrated
 
-def add_item_to_db(
-    db_con: sqlite3.Connection, item: ItemInfo, is_item_hydrated: Optional[bool] = False
+
+def add_items_to_db(
+    db_con: sqlite3.Connection,
+    items: List[ItemInfo],
+    is_item_hydrated: Optional[bool] = False,
 ) -> None:
-    db_con.execute(
-        "INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    parsed_items = [
         (
             item.name,
             item.description,
@@ -97,6 +99,11 @@ def add_item_to_db(
             item.restaurant.rel_url,
             item.restaurant.category.name,
             item.restaurant.category.rel_url,
-        ),
+        )
+        for item in items
+    ]
+    print("parsed_items", parsed_items)
+    db_con.cursor().executemany(
+        "INSERT INTO items VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", parsed_items
     )
     db_con.commit()

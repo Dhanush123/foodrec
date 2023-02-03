@@ -1,18 +1,10 @@
-import os
-from pathlib import Path
 import random
 import time
-from typing import Dict, List, NamedTuple, Optional
+from typing import List, Optional
 import concurrent.futures
-import sqlite3
 
 from bs4 import BeautifulSoup
 import requests
-from tqdm import tqdm
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
 
 
 from utils import (
@@ -21,10 +13,9 @@ from utils import (
     CategoryInfo,
     ItemInfo,
     RestaurantInfo,
-    add_item_to_db,
+    add_items_to_db,
     create_db,
     get_db_con,
-    get_queue_con,
     parse_city,
 )
 
@@ -62,7 +53,9 @@ def get_restaurants_in_category(
                 restaurant_name = header.get_text()
                 rating = get_rating_from_restaurant_box(header.parent.parent)
                 restaurant_list.append(
-                    RestaurantInfo(restaurant_name, rating, rel_restaurant_url, category)
+                    RestaurantInfo(
+                        restaurant_name, rating, rel_restaurant_url, category
+                    )
                 )
                 enumerated += 1
         except Exception as e:
@@ -115,7 +108,6 @@ def get_menu_items(
             items_hrefs_to_remove.add(href)
     item_hrefs -= items_hrefs_to_remove
 
-    # futures_to_href = {}
     item_hrefs = list(item_hrefs)
     final_items_limit = items_limit or len(item_hrefs)
     items = [
@@ -124,14 +116,6 @@ def get_menu_items(
     ]
     print(f"Found {len(items)} items in {restaurant.name}")
     return items
-    # for i in tqdm(range(final_items_limit)):
-    #     # Sleep to avoid getting blocked
-    #     time.sleep(sleep_sec or random.uniform(1, 10))
-    #     item_info_future = executor.submit(get_item_info, item_hrefs[i], browser)
-    #     futures_to_href[item_info_future] = href
-    #     enumerated += 1
-
-    # save_menu(restaurant, futures_to_href)
 
 
 def get_categories_in_city(
@@ -141,7 +125,6 @@ def get_categories_in_city(
 
     categories = []
     categories_url = f"{BASE_UE_URL}/category/{parse_city(city)}"
-    print("categories_url", categories_url)
     categories_res = requests.get(categories_url, headers=BASE_HEADERS)
     page_info = BeautifulSoup(categories_res.text, features="html.parser")
     matches = page_info.find("main").find_all(
@@ -152,7 +135,6 @@ def get_categories_in_city(
         if i == final_categories_limit:
             break
         try:
-            print("match", match)
             categories.append(CategoryInfo(match.get("data-test"), match.get("href")))
         except Exception as e:
             print(f"While getting category from match: {match}, got exception: {e}")
@@ -162,56 +144,54 @@ def get_categories_in_city(
     )
     return categories
 
-    # futures_to_category = {}
-    # for category in categories_info:
-    #     future = executor.submit(get_restaurants_in_category, category, restaurants_limit)
-    #     futures_to_category[future] = category
-
-    # queue = get_queue_con()
-    # for future in concurrent.futures.as_completed(futures_to_category):
-    #     restaurants = future.result()
-    #     print(f"Found {len(restaurants)} restaurants for {futures_to_category[future].name}.")
-    #     for restaurant in restaurants:
-    #         get_menu(restaurant, executor, items_limit=5, sleep_sec=5)
-    #         # queue.put(restaurant._asdict())
-
 
 if __name__ == "__main__":
-    # cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
-    cities = ["Emeryville"]
+    cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
+    num_threads = 12
+    categories_limit, restaurants_limit, items_limit = None, None, None
+
     city_futures_to_categories = {}
     category_futures_to_restaurants = {}
     item_futures_to_db = {}
-    categories_limit, restaurants_limit, items_limit = 5, 1, 1
+
     with get_db_con() as db_con:
         create_db(db_con)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
             for city in cities:
                 city_future = executor.submit(
                     get_categories_in_city, city, categories_limit
                 )
                 city_futures_to_categories[city_future] = city
+                time.sleep(random.uniform(1, 3))
 
-            for city_future in concurrent.futures.as_completed(city_futures_to_categories):
+            for city_future in concurrent.futures.as_completed(
+                city_futures_to_categories
+            ):
                 categories: List[CategoryInfo] = city_future.result()
                 for category in categories:
                     category_future = executor.submit(
                         get_restaurants_in_category, category, restaurants_limit
                     )
                     category_futures_to_restaurants[category_future] = category
+                    time.sleep(random.uniform(1, 3))
 
             for category_future in concurrent.futures.as_completed(
                 category_futures_to_restaurants
             ):
                 restaurants: List[RestaurantInfo] = category_future.result()
                 for restaurant in restaurants:
-                    item_future = executor.submit(get_menu_items, restaurant, items_limit)
+                    item_future = executor.submit(
+                        get_menu_items, restaurant, items_limit
+                    )
                     item_futures_to_db[item_future] = item_future
+                    time.sleep(random.uniform(1, 3))
 
             for item_future in concurrent.futures.as_completed(item_futures_to_db):
                 items: List[ItemInfo] = item_future.result()
-                for item in items:
-                    add_item_to_db(db_con, item)
+                print(
+                    f"Inserting {len(items)} items into the DB for {items[0].restaurant.name}."
+                )
+                add_items_to_db(db_con, items)
 
     db_con.close()
