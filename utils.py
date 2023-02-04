@@ -102,7 +102,6 @@ def add_items_to_db(
         )
         for item in items
     ]
-    print("parsed_items", parsed_items)
     db_con.cursor().executemany(
         "INSERT INTO items VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", parsed_items
     )

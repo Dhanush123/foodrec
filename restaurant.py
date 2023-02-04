@@ -4,6 +4,9 @@ from typing import List, Optional
 import concurrent.futures
 
 from bs4 import BeautifulSoup
+from prefect import flow, task
+from prefect_ray.task_runners import RayTaskRunner
+from prefect_ray.context import remote_options
 import requests
 
 
@@ -30,6 +33,7 @@ def get_rating_from_restaurant_box(restaurant_box: BeautifulSoup) -> int:
     return 0
 
 
+@task
 def get_restaurants_in_category(
     category: CategoryInfo, restaurants_limit: Optional[int]
 ) -> List[RestaurantInfo]:
@@ -81,6 +85,7 @@ def get_categories_info_for_city(city: str) -> List[CategoryInfo]:
     return categories
 
 
+@task
 def get_menu_items(
     restaurant: RestaurantInfo,
     items_limit: Optional[int],
@@ -118,6 +123,7 @@ def get_menu_items(
     return items
 
 
+@task
 def get_categories_in_city(
     city: str,
     categories_limit: Optional[int] = None,
@@ -145,53 +151,90 @@ def get_categories_in_city(
     return categories
 
 
-if __name__ == "__main__":
-    cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
-    num_threads = 12
-    categories_limit, restaurants_limit, items_limit = None, None, None
+@task
+def save_items_to_db(items: List[ItemInfo]):
+    with get_db_con() as db_con:
+        add_items_to_db(db_con, items)
+    db_con.close()
 
-    city_futures_to_categories = {}
-    category_futures_to_restaurants = {}
-    item_futures_to_db = {}
+
+@flow(task_runner=RayTaskRunner())
+def restaurants_flow():
+    cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
+    categories_limit, restaurants_limit, items_limit = None, None, None
+    num_cpus = 8
 
     with get_db_con() as db_con:
         create_db(db_con)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
-            for city in cities:
-                city_future = executor.submit(
-                    get_categories_in_city, city, categories_limit
-                )
-                city_futures_to_categories[city_future] = city
-                time.sleep(random.uniform(1, 3))
-
-            for city_future in concurrent.futures.as_completed(
-                city_futures_to_categories
-            ):
-                categories: List[CategoryInfo] = city_future.result()
-                for category in categories:
-                    category_future = executor.submit(
-                        get_restaurants_in_category, category, restaurants_limit
-                    )
-                    category_futures_to_restaurants[category_future] = category
-                    time.sleep(random.uniform(1, 3))
-
-            for category_future in concurrent.futures.as_completed(
-                category_futures_to_restaurants
-            ):
-                restaurants: List[RestaurantInfo] = category_future.result()
-                for restaurant in restaurants:
-                    item_future = executor.submit(
-                        get_menu_items, restaurant, items_limit
-                    )
-                    item_futures_to_db[item_future] = item_future
-                    time.sleep(random.uniform(1, 3))
-
-            for item_future in concurrent.futures.as_completed(item_futures_to_db):
-                items: List[ItemInfo] = item_future.result()
-                print(
-                    f"Inserting {len(items)} items into the DB for {items[0].restaurant.name}."
-                )
-                add_items_to_db(db_con, items)
-
     db_con.close()
+
+    with remote_options(num_cpus=num_cpus):
+        for city in cities:
+            categories: List[CategoryInfo] = get_categories_in_city.submit(
+                city, categories_limit
+            ).result()
+            for category in categories:
+                restaurants: List[RestaurantInfo] = get_restaurants_in_category.submit(
+                    category, restaurants_limit
+                ).result()
+                for restaurant in restaurants:
+                    items: List[ItemInfo] = get_menu_items.submit(
+                        restaurant, items_limit
+                    ).result()
+                    save_items_to_db.submit(items)
+
+
+if __name__ == "__main__":
+    restaurants_flow()
+
+
+# if __name__ == "__main__":
+#     cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
+#     num_threads = 12
+#     categories_limit, restaurants_limit, items_limit = None, None, None
+
+#     city_futures_to_categories = {}
+#     category_futures_to_restaurants = {}
+#     item_futures_to_db = {}
+
+#     with get_db_con() as db_con:
+#         create_db(db_con)
+
+#         with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+#             for city in cities:
+#                 city_future = executor.submit(
+#                     get_categories_in_city, city, categories_limit
+#                 )
+#                 city_futures_to_categories[city_future] = city
+#                 time.sleep(random.uniform(1, 3))
+
+#             for city_future in concurrent.futures.as_completed(
+#                 city_futures_to_categories
+#             ):
+#                 categories: List[CategoryInfo] = city_future.result()
+#                 for category in categories:
+#                     category_future = executor.submit(
+#                         get_restaurants_in_category, category, restaurants_limit
+#                     )
+#                     category_futures_to_restaurants[category_future] = category
+#                     time.sleep(random.uniform(1, 3))
+
+#             for category_future in concurrent.futures.as_completed(
+#                 category_futures_to_restaurants
+#             ):
+#                 restaurants: List[RestaurantInfo] = category_future.result()
+#                 for restaurant in restaurants:
+#                     item_future = executor.submit(
+#                         get_menu_items, restaurant, items_limit
+#                     )
+#                     item_futures_to_db[item_future] = item_future
+#                     time.sleep(random.uniform(1, 3))
+
+#             for item_future in concurrent.futures.as_completed(item_futures_to_db):
+#                 items: List[ItemInfo] = item_future.result()
+#                 print(
+#                     f"Inserting {len(items)} items into the DB for {items[0].restaurant.name}."
+#                 )
+#                 add_items_to_db(db_con, items)
+
+#     db_con.close()
