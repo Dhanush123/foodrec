@@ -6,10 +6,13 @@ from sqlalchemy import (
     Column,
     Integer,
     String,
+    select,
+    update,
 )
-from sqlalchemy.orm import Session, declarative_base
+from sqlalchemy.orm import Session, sessionmaker, declarative_base
 
 DB_ENGINE = create_engine("sqlite:///data/menu.db", echo=False)
+Session = sessionmaker(DB_ENGINE)
 
 
 class CategoryInfo(NamedTuple):
@@ -27,7 +30,6 @@ class ItemInfo(NamedTuple):
     name: str
     description: str
     rel_url: str
-    restaurant: RestaurantInfo
 
 
 # This old syntax is due to using SQLAlchemy 1.4.22, latest 2.0.+ is not compatible with Prefect
@@ -73,23 +75,58 @@ def create_db_tables() -> None:
 
 def save_categories_to_db(categories: List[CategoryInfo]) -> None:
     # combining the contexts means commit and close are implicitly called
-    with Session(DB_ENGINE) as session, session.begin():
-        for category in categories:
-            session.add(Category(**category._asdict()))
-        session.commit()
-        session.close()
+    with Session() as session, session.begin():
+        db_transformed_categories = [
+            Category(**category._asdict()) for category in categories
+        ]
+        session.add_all(db_transformed_categories)
 
 
 def save_restaurants_to_db(
     category: Category, restaurants: List[RestaurantInfo]
 ) -> None:
     # combining the contexts means commit and close are implicitly called
-    with Session(DB_ENGINE) as session, session.begin():
-        for restaurant in restaurants:
-            session.add(Restaurant(category_id=category.id, **restaurant._asdict()))
+    with Session() as session, session.begin():
+        db_transformed_restaurants = [
+            Restaurant(category_id=category.id, **restaurant._asdict())
+            for restaurant in restaurants
+        ]
+        session.add_all(db_transformed_restaurants)
 
 
 def save_items_to_db(restaurant: Restaurant, items: List[ItemInfo]) -> None:
-    with Session(DB_ENGINE) as session, session.begin():
-        for item in items:
-            session.add(Item(restaurant_id=restaurant.id, **item._asdict()))
+    with Session() as session, session.begin():
+        db_transformed_items = [
+            Item(restaurant_id=restaurant.id, **item._asdict()) for item in items
+        ]
+        session.add_all(db_transformed_items)
+
+
+def get_restaurants_from_db() -> List[Restaurant]:
+    with Session(expire_on_commit=False) as session, session.begin():
+        restaurants_query = select(Restaurant)
+        restaurants = session.execute(restaurants_query).scalars().all()
+        return restaurants
+
+
+def get_categories_from_db() -> List[Category]:
+    with Session(expire_on_commit=False) as session, session.begin():
+        categories_query = select(Category)
+        categories = session.execute(categories_query).scalars().all()
+        return categories
+
+
+def get_items_from_db() -> List[Item]:
+    with Session(expire_on_commit=False) as session, session.begin():
+        items_query = select(Item)
+        items = session.execute(items_query).scalars().all()
+        return items
+
+
+def populate_item_in_db(item: Item, item_info: ItemInfo) -> None:
+    with Session() as session, session.begin():
+        session.execute(
+            update(Item)
+            .where(Item.id == item.id)
+            .values(name=item_info.name, description=item_info.description)
+        )

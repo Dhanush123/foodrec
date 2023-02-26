@@ -5,27 +5,41 @@ from typing import List, Optional
 from bs4 import BeautifulSoup
 from prefect import flow, task
 from prefect.task_runners import ConcurrentTaskRunner
+from prefect_ray.task_runners import RayTaskRunner
+from prefect_ray.context import remote_options
 import requests
-from sqlalchemy import select
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.wait import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 from utils.utils import (
     BASE_HEADERS,
     BASE_UE_URL,
     parse_city,
+    setup_browser,
 )
 from utils.db_utils import (
     DB_ENGINE,
     Category,
     CategoryInfo,
+    Item,
     ItemInfo,
     Restaurant,
     RestaurantInfo,
     create_db_tables,
+    get_categories_from_db,
+    get_items_from_db,
+    get_restaurants_from_db,
+    populate_item_in_db,
     save_categories_to_db,
     save_restaurants_to_db,
     save_items_to_db,
 )
-from sqlalchemy.orm import Session
+
+DEFAULT_SLEEP_SEC = 10
 
 
 def _get_rating_from_restaurant_box(restaurant_box: BeautifulSoup) -> int:
@@ -38,13 +52,56 @@ def _get_rating_from_restaurant_box(restaurant_box: BeautifulSoup) -> int:
     return 0
 
 
-@task
-def get_menu_items(
+@task(timeout_seconds=120)
+def populate_item(
+    item: Item,
+    sleep_sec: Optional[float] = DEFAULT_SLEEP_SEC,
+) -> Optional[ItemInfo]:
+    time.sleep(random.uniform(0, sleep_sec))
+
+    try:
+        browser: webdriver.Chrome = setup_browser()
+        # example full_url = "https://www.ubereats.com/store/homeroom-to-go/32drpQtyRNeTXI0jm6wP0A?diningMode=DELIVERY&mod=quickView&modctx=%257B%2522storeUuid%2522%253A%2522df676ba5-0b72-44d7-935c-8d239bac0fd0%2522%252C%2522sectionUuid%2522%253A%25227d980256-87b4-5f9d-980e-f5ceda776ec4%2522%252C%2522subsectionUuid%2522%253A%25227e12b8f3-15c3-520f-bd0a-58c7cee4ca68%2522%252C%2522itemUuid%2522%253A%2522386a3b04-283a-53f8-b6c2-4734846be037%2522%257D&ps=1"
+        full_url = f"{BASE_UE_URL}{item.rel_url}&diningMode=DELIVERY&pl=JTdCJTIyYWRkcmVzcyUyMiUzQSUyMkNvdmFyaWFudC5haSUyMiUyQyUyMnJlZmVyZW5jZSUyMiUzQSUyMkNoSUpFdzRlTTBaX2hZQVJVY21OTmp4MlREbyUyMiUyQyUyMnJlZmVyZW5jZVR5cGUlMjIlM0ElMjJnb29nbGVfcGxhY2VzJTIyJTJDJTIybGF0aXR1ZGUlMjIlM0EzNy44NDExNTc2JTJDJTIybG9uZ2l0dWRlJTIyJTNBLTEyMi4yOTU4MTMxJTdE"
+        browser.get(full_url)
+
+        # element 0 is the restaurant name, element 1 is the item name
+        h1_elements = WebDriverWait(browser, 30).until(
+            EC.visibility_of_all_elements_located((By.TAG_NAME, "h1"))
+        )
+        item_element = h1_elements[1]
+        item_name = item_element.text
+        item_description = None
+
+        try:
+            parent_element = item_element.find_element(By.XPATH, "..")
+            child_elements = parent_element.find_elements(By.TAG_NAME, "div")
+            for e in child_elements:
+                if e.text:
+                    item_description = e.text
+                    break
+        except Exception as e:
+            print(
+                f"populate_item item_description exception for item full_url {full_url}: {e}"
+            )
+        finally:
+            item_info = ItemInfo(item_name, item_description, item.rel_url)
+            populate_item_in_db(item, item_info)
+            browser.quit()
+            return item_info
+    except Exception as e:
+        print(f"populate_item exception for item {full_url}: {e}")
+        return None
+
+
+@task(timeout_seconds=60)
+def get_items(
     restaurant: Restaurant,
     items_limit: Optional[int],
+    sleep_sec: Optional[float] = DEFAULT_SLEEP_SEC,
 ) -> List[ItemInfo]:
+    time.sleep(random.uniform(0, sleep_sec))
     items = []
-    time.sleep(random.uniform(0, 2))
 
     try:
         restaurant_res = requests.get(
@@ -75,24 +132,27 @@ def get_menu_items(
         item_hrefs = list(item_hrefs)
         final_items_limit = items_limit or len(item_hrefs)
         items = [
-            ItemInfo(name=None, description=None, rel_url=url, restaurant=restaurant)
+            ItemInfo(name=None, description=None, rel_url=url)
             for url in item_hrefs[:final_items_limit]
         ]
 
         print(f"Found {len(items)} items in {restaurant.name}")
         save_items_to_db(restaurant, items)
     except Exception as e:
-        print(f"While getting items in restaurant: {restaurant}, got exception: {e}")
+        print(
+            f"While getting items in restaurant: {restaurant.name}, got exception: {e}"
+        )
     finally:
         return items
 
 
-@task
+@task(timeout_seconds=60)
 def get_restaurants_in_category(
     category: Category,
     restaurants_limit: Optional[int],
+    sleep_sec: Optional[float] = DEFAULT_SLEEP_SEC,
 ) -> List[RestaurantInfo]:
-    time.sleep(random.uniform(0, 2))
+    time.sleep(random.uniform(0, sleep_sec))
     restaurants = []
 
     try:
@@ -127,17 +187,20 @@ def get_restaurants_in_category(
         print(f"Found {len(restaurants)} restaurants in {category.name}")
         save_restaurants_to_db(category, restaurants)
     except Exception as e:
-        print(f"While getting restaurants in category: {category}, got exception: {e}")
+        print(
+            f"While getting restaurants in category: {category.name}, got exception: {e}"
+        )
     finally:
         return restaurants
 
 
-@task
+@task(timeout_seconds=60)
 def get_categories_in_city(
     city: str,
     categories_limit: Optional[int] = None,
+    sleep_sec: Optional[float] = DEFAULT_SLEEP_SEC,
 ) -> List[CategoryInfo]:
-    time.sleep(random.uniform(0, 2))
+    time.sleep(random.uniform(0, sleep_sec))
     categories = []
 
     try:
@@ -169,32 +232,55 @@ def get_categories_in_city(
         return categories
 
 
-@flow(task_runner=ConcurrentTaskRunner())
+@task(timeout_seconds=60)
+def get_categories_from_db_task() -> List[Category]:
+    return get_categories_from_db()
+
+
+@task(timeout_seconds=60)
+def get_restaurants_from_db_task() -> List[Restaurant]:
+    return get_restaurants_from_db()
+
+
+@task(timeout_seconds=60)
+def get_items_from_db_task() -> List[Item]:
+    return get_items_from_db()
+
+
+# @flow(task_runner=ConcurrentTaskRunner())
+@flow(task_runner=RayTaskRunner())
 def restaurants_flow():
-    cities = ["Emeryville", "Oakland"]
-    # cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
-    # categories_limit, restaurants_limit, items_limit = None, 5, 50
-    categories_limit, restaurants_limit, items_limit = 2, 2, 2
-    # num_cpus = 16
-    db_timeout_sec = 300
+    # cities = ["Emeryville", "Oakland"]
+    # categories_limit, restaurants_limit, items_limit = 2, 2, 2
+    cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
+    categories_limit, restaurants_limit, items_limit = None, 5, 50
+    num_cpus = 20
+    sleep_sec = num_cpus * 0.5
 
     print(
-        f"Starting the flow with cities {cities}, {categories_limit} categories, {restaurants_limit} restaurants, {items_limit} items per restaurant, and {db_timeout_sec} seconds timeout for the DB."
+        f"Starting the flow with cities {cities}, {categories_limit} categories, {restaurants_limit} restaurants, and {items_limit} items per restaurant for the DB."
     )
 
-    # 1
-    create_db_tables()
-    # 2
-    get_categories_in_city.map(cities, categories_limit)
-    # 3
-    with Session(DB_ENGINE) as session, session.begin():
-        categories_query = select(Category)
-        categories = session.execute(categories_query).scalars().all()
-    get_restaurants_in_category.map(categories, categories_limit)
-    # 4
-    with Session(DB_ENGINE) as session, session.begin():
-        restaurants_query = select(Restaurant)
-        restaurants = session.execute(restaurants_query).scalars().all()
-    get_menu_items.map(restaurants, items_limit)
-
-    print("Finished the flow.")
+    with remote_options(num_cpus=num_cpus):
+        # 1
+        create_db_tables()
+        # 2
+        category_futures = get_categories_in_city.map(
+            cities, categories_limit, sleep_sec
+        )
+        # 3
+        categories = get_categories_from_db_task(wait_for=category_futures)
+        restaurant_futures = get_restaurants_in_category.map(
+            categories,
+            categories_limit,
+            sleep_sec,
+            wait_for=[get_categories_from_db_task],
+        )
+        # 4
+        restaurants = get_restaurants_from_db_task(wait_for=restaurant_futures)
+        item_futures = get_items.map(
+            restaurants, items_limit, sleep_sec, wait_for=[get_restaurants_from_db_task]
+        )
+        # 5
+        items = get_items_from_db_task(wait_for=item_futures)
+        populate_item.map(items, sleep_sec, wait_for=items)
