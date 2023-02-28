@@ -11,7 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session, sessionmaker, declarative_base
 
-DB_ENGINE = create_engine("sqlite:///data/menu.db", echo=False)
+DB_ENGINE = create_engine("sqlite:///data/menu.db?timeout=60", echo=False)
 Session = sessionmaker(DB_ENGINE)
 
 
@@ -33,7 +33,7 @@ class ItemInfo(NamedTuple):
 
 
 # This old syntax is due to using SQLAlchemy 1.4.22, latest 2.0.+ is not compatible with Prefect
-# Gives error prefect 2.7.11 requires sqlalchemy[asyncio]!=1.4.33,<2.0,>=1.4.22, but you have sqlalchemy 2.0.4 which is incompatible
+# Gives error "prefect 2.7.11 requires sqlalchemy[asyncio]!=1.4.33,<2.0,>=1.4.22, but you have sqlalchemy 2.0.4 which is incompatible"
 Base = declarative_base()
 
 

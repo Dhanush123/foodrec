@@ -1,3 +1,4 @@
+import json
 import random
 import time
 from typing import List, Optional
@@ -60,6 +61,7 @@ def populate_item(
     time.sleep(random.uniform(0, sleep_sec))
 
     try:
+        print(f"Populating item: {item.rel_url}")
         browser: webdriver.Chrome = setup_browser()
         # example full_url = "https://www.ubereats.com/store/homeroom-to-go/32drpQtyRNeTXI0jm6wP0A?diningMode=DELIVERY&mod=quickView&modctx=%257B%2522storeUuid%2522%253A%2522df676ba5-0b72-44d7-935c-8d239bac0fd0%2522%252C%2522sectionUuid%2522%253A%25227d980256-87b4-5f9d-980e-f5ceda776ec4%2522%252C%2522subsectionUuid%2522%253A%25227e12b8f3-15c3-520f-bd0a-58c7cee4ca68%2522%252C%2522itemUuid%2522%253A%2522386a3b04-283a-53f8-b6c2-4734846be037%2522%257D&ps=1"
         full_url = f"{BASE_UE_URL}{item.rel_url}&diningMode=DELIVERY&pl=JTdCJTIyYWRkcmVzcyUyMiUzQSUyMkNvdmFyaWFudC5haSUyMiUyQyUyMnJlZmVyZW5jZSUyMiUzQSUyMkNoSUpFdzRlTTBaX2hZQVJVY21OTmp4MlREbyUyMiUyQyUyMnJlZmVyZW5jZVR5cGUlMjIlM0ElMjJnb29nbGVfcGxhY2VzJTIyJTJDJTIybGF0aXR1ZGUlMjIlM0EzNy44NDExNTc2JTJDJTIybG9uZ2l0dWRlJTIyJTNBLTEyMi4yOTU4MTMxJTdE"
@@ -247,9 +249,37 @@ def get_items_from_db_task() -> List[Item]:
     return get_items_from_db()
 
 
+@task
+def get_restaurant_spans(restaurant: Restaurant) -> List[str]:
+    # full_url = "https://www.ubereats.com/store/la-estrella-food-truck/1S1RJ9zXQC23uwBxwtXR3A?diningMode=DELIVERY&pl=JTdCJTIyYWRkcmVzcyUyMiUzQSUyMkNvdmFyaWFudC5haSUyMiUyQyUyMnJlZmVyZW5jZSUyMiUzQSUyMkNoSUpFdzRlTTBaX2hZQVJVY21OTmp4MlREbyUyMiUyQyUyMnJlZmVyZW5jZVR5cGUlMjIlM0ElMjJnb29nbGVfcGxhY2VzJTIyJTJDJTIybGF0aXR1ZGUlMjIlM0EzNy44NDExNTc2JTJDJTIybG9uZ2l0dWRlJTIyJTNBLTEyMi4yOTU4MTMxJTdE"
+    full_url = f"{BASE_UE_URL}{restaurant.rel_url}?diningMode=DELIVERY&pl=JTdCJTIyYWRkcmVzcyUyMiUzQSUyMkNvdmFyaWFudC5haSUyMiUyQyUyMnJlZmVyZW5jZSUyMiUzQSUyMkNoSUpFdzRlTTBaX2hZQVJVY21OTmp4MlREbyUyMiUyQyUyMnJlZmVyZW5jZVR5cGUlMjIlM0ElMjJnb29nbGVfcGxhY2VzJTIyJTJDJTIybGF0aXR1ZGUlMjIlM0EzNy44NDExNTc2JTJDJTIybG9uZ2l0dWRlJTIyJTNBLTEyMi4yOTU4MTMxJTdE"
+    print(f"Getting items from restaurant: {restaurant.name} with url: {full_url}")
+    res = requests.get(full_url, headers=BASE_HEADERS)
+    page_info = BeautifulSoup(res.text, features="html.parser")
+    matches = page_info.find_all("script", type="application/ld+json")
+    menu_items = []
+    for match in matches:
+        # print(match)
+        match = json.loads(match.text)
+        if match.get("@type") == "Restaurant":
+            menu = match.get("hasMenu")
+            print(menu)
+            if menu:
+                menu_selection = menu.get("hasMenuSection")
+                if menu_selection:
+                    for menu in menu_selection:
+                        menu_items = menu.get("hasMenuItem")
+                        if menu_items:
+                            menu_items.extend(menu_items)
+            break
+    return menu_items
+    # return [match.get_text() for match in matches if match.get_text() is not None]
+
+
 # @flow(task_runner=ConcurrentTaskRunner())
+# @flow
 @flow(task_runner=RayTaskRunner())
-def restaurants_flow():
+def experimental_restaurants_flow():
     # cities = ["Emeryville", "Oakland"]
     # categories_limit, restaurants_limit, items_limit = 2, 2, 2
     cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
@@ -262,25 +292,6 @@ def restaurants_flow():
     )
 
     with remote_options(num_cpus=num_cpus):
-        # 1
-        create_db_tables()
-        # 2
-        category_futures = get_categories_in_city.map(
-            cities, categories_limit, sleep_sec
-        )
-        # 3
-        categories = get_categories_from_db_task(wait_for=category_futures)
-        restaurant_futures = get_restaurants_in_category.map(
-            categories,
-            categories_limit,
-            sleep_sec,
-            wait_for=[get_categories_from_db_task],
-        )
-        # 4
-        restaurants = get_restaurants_from_db_task(wait_for=restaurant_futures)
-        item_futures = get_items.map(
-            restaurants, items_limit, sleep_sec, wait_for=[get_restaurants_from_db_task]
-        )
-        # 5
-        items = get_items_from_db_task(wait_for=item_futures)
-        populate_item.map(items, sleep_sec, wait_for=items)
+        restaurants = get_restaurants_from_db_task()
+        for restaurant in restaurants[:1]:
+            print(get_restaurant_spans(restaurant))

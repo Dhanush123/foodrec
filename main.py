@@ -1,4 +1,4 @@
-from flows.restaurant_sql import restaurants_flow
+from flows.restaurant_stable import restaurants_flow
 
 
 if __name__ == "__main__":
