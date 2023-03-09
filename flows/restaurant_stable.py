@@ -255,7 +255,7 @@ def restaurants_flow():
     # cities = ["Emeryville", "Oakland"]
     # categories_limit, restaurants_limit, items_limit = 2, 2, 2
     cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
-    categories_limit, restaurants_limit, items_limit = None, 5, 50
+    categories_limit, restaurants_limit, items_limit = None, None, 50
     num_cpus = 20
     sleep_sec = num_cpus * 0.5
 
@@ -287,20 +287,20 @@ def restaurants_flow():
         #     sleep_sec,
         #     wait_for=[get_categories_from_db_task],
         # )
-        # 4
-        restaurants = get_restaurants_from_db_task(wait_for=restaurant_futures)
-        item_futures = [
-            get_items.submit(restaurant, items_limit, sleep_sec)
-            for restaurant in restaurants
-        ]
-        # item_futures = get_items.map(
-        #     restaurants, items_limit, sleep_sec, wait_for=[get_restaurants_from_db_task]
-        # )
-        # 5
-        items = get_items_from_db_task(wait_for=item_futures)
-        # populate_item.map(items, sleep_sec, wait_for=items)
-        for item in items:
-            populate_item.submit(item, sleep_sec)
+        # # 4
+        # restaurants = get_restaurants_from_db_task(wait_for=restaurant_futures)
+        # item_futures = [
+        #     get_items.submit(restaurant, items_limit, sleep_sec)
+        #     for restaurant in restaurants
+        # ]
+        # # item_futures = get_items.map(
+        # #     restaurants, items_limit, sleep_sec, wait_for=[get_restaurants_from_db_task]
+        # # )
+        # # 5
+        # items = get_items_from_db_task(wait_for=item_futures)
+        # # populate_item.map(items, sleep_sec, wait_for=items)
+        # for item in items:
+        #     populate_item.submit(item, sleep_sec)
 
         ############################################################################################################
         # items = get_items_from_db_task()
