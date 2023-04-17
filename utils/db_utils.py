@@ -32,6 +32,11 @@ class ItemInfo(NamedTuple):
     rel_url: str
 
 
+class RecipeInfo(NamedTuple):
+    name: str
+    ingredients: str
+
+
 # This old syntax is due to using SQLAlchemy 1.4.22, latest 2.0.+ is not compatible with Prefect
 # Gives error "prefect 2.7.11 requires sqlalchemy[asyncio]!=1.4.33,<2.0,>=1.4.22, but you have sqlalchemy 2.0.4 which is incompatible"
 Base = declarative_base()
@@ -69,7 +74,15 @@ class City(Base):
     rel_url = Column(String, unique=True)
 
 
+class Recipe(Base):
+    __tablename__ = "recipe"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    ingredients = Column(String)
+
+
 def create_db_tables() -> None:
+    # Create tables that don't exist. Existing tables are not modified.
     Base.metadata.create_all(DB_ENGINE)
 
 
@@ -130,3 +143,8 @@ def populate_item_in_db(item: Item, item_info: ItemInfo) -> None:
             .where(Item.id == item.id)
             .values(name=item_info.name, description=item_info.description)
         )
+
+
+def save_recipe_to_db(recipe: RecipeInfo) -> None:
+    with Session() as session, session.begin():
+        session.add(Recipe(**recipe._asdict()))
