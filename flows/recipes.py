@@ -1,25 +1,27 @@
 import random
 import time
-from typing import List
+from typing import Callable, List
 from bs4 import BeautifulSoup
-from prefect import flow, task
+from prefect import flow, task, unmapped
 from prefect_ray.task_runners import RayTaskRunner
 from prefect_ray.context import remote_options
+
+# from prefect.utilities import wait
 import requests
 
-from utils.db_utils import create_db_tables, save_recipe_to_db
+from utils.db_utils import RecipeInfo, create_db_tables, save_recipe_to_db
 
 
 @task()
 def get_allrecipes_links(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
-    links = [a["href"] for a in soup.select(".fixed-recipe-card__h3 a")]
+    links = [a["href"] for a in soup.select(".card__detailsContainer-left a")]
     return links
 
 
 @task()
-def get_allrecipes_details(url: str, sleep_sec: float) -> dict:
+def get_allrecipes_details(url: str, sleep_sec: float) -> RecipeInfo:
     time.sleep(random.uniform(0, sleep_sec))
 
     response = requests.get(url)
@@ -28,19 +30,19 @@ def get_allrecipes_details(url: str, sleep_sec: float) -> dict:
     name = soup.select_one(".headline-wrapper h1").text.strip()
     ingredients = [i.text.strip() for i in soup.select(".ingredients-item-name")]
 
-    return {"name": name, "ingredients": ingredients}
+    return RecipeInfo(name=name, ingredients=ingredients)
 
 
 @task()
 def get_food_links(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
-    links = [a["href"] for a in soup.select(".tile__title-link")]
+    links = [a["href"] for a in soup.select(".entry-title a")]
     return links
 
 
 @task()
-def get_food_details(url: str, sleep_sec: float) -> dict:
+def get_food_details(url: str, sleep_sec: float) -> RecipeInfo:
     time.sleep(random.uniform(0, sleep_sec))
 
     response = requests.get(url)
@@ -52,42 +54,43 @@ def get_food_details(url: str, sleep_sec: float) -> dict:
         for i in soup.select(".recipe-ingredients__ingredient-parts .ingredient")
     ]
 
-    return {"name": name, "ingredients": ingredients}
+    return RecipeInfo(name=name, ingredients=ingredients)
 
 
 @task
 def get_foodnetwork_links(url):
+    print(f"Base URL: {url}")  # Debug: Print the base URL
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
-    links = [a["href"] for a in soup.select(".card.recipe-card .card__content a")]
+    links = [a["href"] for a in soup.select(".m-MediaBlock__a-Headline a")]
     return links
 
 
 @task
-def get_foodnetwork_details(url: str, sleep_sec: float) -> dict:
+def get_foodnetwork_details(url: str, sleep_sec: float) -> RecipeInfo:
     time.sleep(random.uniform(0, sleep_sec))
 
-    response = requests.get(url)
+    response = requests.get(f"https:{url}")
     soup = BeautifulSoup(response.text, "html.parser")
 
     name = soup.select_one(".o-AssetTitle__a-HeadlineText").text.strip()
-    ingredients = [
-        i.text.strip() for i in soup.select(".o-Ingredients__a-ListItemText")
-    ]
+    ingredients = " ".join(
+        [i.text.strip() for i in soup.select(".o-Ingredients__a-ListItemText")]
+    )
 
-    return {"name": name, "ingredients": ingredients}
+    return RecipeInfo(name=name, ingredients=ingredients)
 
 
 @task
 def get_delish_links(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
-    links = [a["href"] for a in soup.select(".full-item-content a")]
+    links = [a["href"] for a in soup.select(".card-title a")]
     return links
 
 
 @task
-def get_delish_details(url: str, sleep_sec: float) -> dict:
+def get_delish_details(url: str, sleep_sec: float) -> RecipeInfo:
     time.sleep(random.uniform(0, sleep_sec))
 
     response = requests.get(url)
@@ -96,19 +99,19 @@ def get_delish_details(url: str, sleep_sec: float) -> dict:
     name = soup.select_one(".recipe-title").text.strip()
     ingredients = [i.text.strip() for i in soup.select(".ingredient-description")]
 
-    return {"name": name, "ingredients": ingredients}
+    return RecipeInfo(name=name, ingredients=ingredients)
 
 
 @task
 def get_nytimes_links(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
-    links = [a["href"] for a in soup.select(".css-4jyr1y a")]
+    links = [a["href"] for a in soup.select(".card h2 a")]
     return links
 
 
 @task
-def get_nytimes_details(url: str, sleep_sec: float) -> dict:
+def get_nytimes_details(url: str, sleep_sec: float) -> RecipeInfo:
     time.sleep(random.uniform(0, sleep_sec))
 
     response = requests.get(url)
@@ -117,7 +120,7 @@ def get_nytimes_details(url: str, sleep_sec: float) -> dict:
     name = soup.select_one(".css-jeyium").text.strip()
     ingredients = [i.text.strip() for i in soup.select(".css-8z9nqv")]
 
-    return {"name": name, "ingredients": ingredients}
+    return RecipeInfo(name=name, ingredients=ingredients)
 
 
 @task
@@ -129,7 +132,7 @@ def get_bonappetit_links(url):
 
 
 @task
-def get_bonappetit_details(url: str, sleep_sec: float) -> dict:
+def get_bonappetit_details(url: str, sleep_sec: float) -> RecipeInfo:
     time.sleep(random.uniform(0, sleep_sec))
 
     response = requests.get(url)
@@ -138,10 +141,9 @@ def get_bonappetit_details(url: str, sleep_sec: float) -> dict:
     name = soup.select_one(".post__header__hed").text.strip()
     ingredients = [i.text.strip() for i in soup.select(".ingredients__text")]
 
-    return {"name": name, "ingredients": ingredients}
+    return RecipeInfo(name=name, ingredients=ingredients)
 
 
-@task
 def get_urls(page_num):
     allrecipes_base_url = (
         "https://www.allrecipes.com/recipes/87/everyday-cooking/vegetarian/"
@@ -176,15 +178,32 @@ def get_urls(page_num):
 
 
 @task
-def process_website_links(
-    website_links: List[str], website_details_task, sleep_sec: float
-):
-    for link in website_links:
-        recipe_details = website_details_task.submit(link, sleep_sec)
-        save_recipe_to_db.submit(recipe_details)
+def save_recipe_to_db_task(recipe: RecipeInfo) -> None:
+    print(f"Saving to DB recipe {recipe.name} with {recipe.ingredients}")
+    save_recipe_to_db(recipe)
 
 
-@flow(task_runner=RayTaskRunner())
+# @task
+# def process_website_links(
+#     website_links: List[str], website_details_task: task, sleep_sec: float
+# ):
+#     print(f"Processing {len(website_links)} links")
+#     for link in website_links:
+#         print(f"Processing link {link}")
+#         recipe_info = website_details_task.submit(link, sleep_sec).wait()
+#         print(f"Saving to DB recipe {recipe_info.name} with {recipe_info.ingredients}")
+#         save_recipe_to_db(recipe_info)
+
+
+# @task
+# def process_website_links(url: str, website_details_func: Callable, sleep_sec: float):
+#     print(f"Processing url {url}")
+#     recipe_info = website_details_func(url, sleep_sec)
+#     print(f"Saving to DB recipe {recipe_info.name} with {recipe_info.ingredients}")
+#     return recipe_info
+
+
+@flow
 def recipes_flow():
     num_cpus = 20
     num_pages = 1
@@ -206,15 +225,30 @@ def recipes_flow():
     # 3
     with remote_options(num_cpus=num_cpus):
         tasks = [
-            (get_allrecipes_links, get_allrecipes_details, allrecipes_urls),
-            (get_food_links, get_food_details, food_urls),
+            # (get_allrecipes_links, get_allrecipes_details, allrecipes_urls),
+            # (get_food_links, get_food_details, food_urls),
             (get_foodnetwork_links, get_foodnetwork_details, foodnetwork_urls),
-            (get_delish_links, get_delish_details, delish_urls),
-            (get_nytimes_links, get_nytimes_details, nytimes_urls),
-            (get_bonappetit_links, get_bonappetit_details, bonappetit_urls),
+            # (get_delish_links, get_delish_details, delish_urls),
+            # (get_nytimes_links, get_nytimes_details, nytimes_urls),
+            # (get_bonappetit_links, get_bonappetit_details, bonappetit_urls),
         ]
 
+        # for get_links_task, get_details_task, urls in tasks:
+        #     links = get_links_task.map(urls)
+        #     food_infos = get_details_task.map(
+        #         links, sleep_sec=sleep_sec, wait_for=[links]
+        #     )
         for get_links_task, get_details_task, urls in tasks:
-            for url in urls:
-                links = get_links_task.submit(url)
-                process_website_links.submit(links, get_details_task, sleep_sec)
+            print(f"Submitting {len(urls)} urls")
+
+            links_futures = [get_links_task.submit(url) for url in urls]
+            all_links = []
+            for links_future in links_futures:
+                links = links_future.result()
+                all_links += links
+
+            # all_links = all_links[:1]
+            recipe_infos = get_details_task.map(
+                all_links, unmapped(sleep_sec), wait_for=links_futures
+            )
+            save_recipe_to_db_task.map(recipe_infos, wait_for=[recipe_infos])
