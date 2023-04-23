@@ -1,6 +1,7 @@
 from typing import List, NamedTuple
 
 from sqlalchemy import (
+    Float,
     ForeignKey,
     create_engine,
     Column,
@@ -35,6 +36,7 @@ class ItemInfo(NamedTuple):
 class RecipeInfo(NamedTuple):
     name: str
     ingredients: str
+    url: str
 
 
 # This old syntax is due to using SQLAlchemy 1.4.22, latest 2.0.+ is not compatible with Prefect
@@ -56,6 +58,7 @@ class Restaurant(Base):
     rating = Column(Integer)
     rel_url = Column(String, unique=True)
     category_id = Column(Integer, ForeignKey("category.id"))
+    vegetarian_friendly_score = Column(Float)
 
 
 class Item(Base):
@@ -65,6 +68,7 @@ class Item(Base):
     description = Column(String)
     rel_url = Column(String, unique=True)
     restaurant_id = Column(Integer, ForeignKey("restaurant.id"))
+    vegetarian_friendly_score = Column(Float)
 
 
 class City(Base):
@@ -79,6 +83,7 @@ class Recipe(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
     ingredients = Column(String)
+    url = Column(String, unique=True)
 
 
 def create_db_tables() -> None:

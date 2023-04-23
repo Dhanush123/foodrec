@@ -1,6 +1,6 @@
 import fire
 from flows.restaurant_stable import restaurants_flow
-from flows.recipes import recipes_flow
+from flows.recipes_stable import recipes_flow
 
 
 class Main(object):

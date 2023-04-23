@@ -5,6 +5,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 
+DEFAULT_SLEEP_SEC = 10
+TASK_TIMEOUT_SECONDS = 60
 
 BASE_UE_URL = "https://www.ubereats.com"
 BASE_HEADERS = {
