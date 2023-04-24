@@ -12,6 +12,7 @@ import requests
 
 from utils.utils import (
     DEFAULT_SLEEP_SEC,
+    REQUEST_GET_TIMEOUT_SECS,
     TASK_TIMEOUT_SECONDS,
     BASE_HEADERS,
     BASE_UE_URL,
@@ -53,7 +54,7 @@ def get_items_in_restaurant(
     # full_url = "https://www.ubereats.com/store/la-estrella-food-truck/1S1RJ9zXQC23uwBxwtXR3A?diningMode=DELIVERY&pl=JTdCJTIyYWRkcmVzcyUyMiUzQSUyMkNvdmFyaWFudC5haSUyMiUyQyUyMnJlZmVyZW5jZSUyMiUzQSUyMkNoSUpFdzRlTTBaX2hZQVJVY21OTmp4MlREbyUyMiUyQyUyMnJlZmVyZW5jZVR5cGUlMjIlM0ElMjJnb29nbGVfcGxhY2VzJTIyJTJDJTIybGF0aXR1ZGUlMjIlM0EzNy44NDExNTc2JTJDJTIybG9uZ2l0dWRlJTIyJTNBLTEyMi4yOTU4MTMxJTdE"
     full_url = f"{BASE_UE_URL}{restaurant.rel_url}?diningMode=DELIVERY&pl=JTdCJTIyYWRkcmVzcyUyMiUzQSUyMkNvdmFyaWFudC5haSUyMiUyQyUyMnJlZmVyZW5jZSUyMiUzQSUyMkNoSUpFdzRlTTBaX2hZQVJVY21OTmp4MlREbyUyMiUyQyUyMnJlZmVyZW5jZVR5cGUlMjIlM0ElMjJnb29nbGVfcGxhY2VzJTIyJTJDJTIybGF0aXR1ZGUlMjIlM0EzNy44NDExNTc2JTJDJTIybG9uZ2l0dWRlJTIyJTNBLTEyMi4yOTU4MTMxJTdE"
     print(f"Getting items from restaurant: {restaurant.name} with url: {full_url}")
-    res = requests.get(full_url, headers=BASE_HEADERS)
+    res = requests.get(full_url, headers=BASE_HEADERS, timeout=REQUEST_GET_TIMEOUT_SECS)
     page_info = BeautifulSoup(res.text, features="html.parser")
     matches = page_info.find_all("script", type="application/ld+json")
     all_item_infos = []
@@ -103,7 +104,9 @@ def get_restaurants_in_category(
     try:
         # TODO: filter out restaurants that are too far for delivery
         category_res = requests.get(
-            f"{BASE_UE_URL}{category.rel_url}", headers=BASE_HEADERS
+            f"{BASE_UE_URL}{category.rel_url}",
+            headers=BASE_HEADERS,
+            timeout=REQUEST_GET_TIMEOUT_SECS,
         )
         page_info = BeautifulSoup(category_res.text, features="html.parser")
 
@@ -150,7 +153,9 @@ def get_categories_in_city(
 
     try:
         categories_url = f"{BASE_UE_URL}/category/{parse_city(city)}"
-        categories_res = requests.get(categories_url, headers=BASE_HEADERS)
+        categories_res = requests.get(
+            categories_url, headers=BASE_HEADERS, timeout=REQUEST_GET_TIMEOUT_SECS
+        )
         page_info = BeautifulSoup(categories_res.text, features="html.parser")
         matches = page_info.find("main").find_all(
             "a", href=lambda href: href and href.startswith("/category")
@@ -198,8 +203,8 @@ def restaurants_flow():
     # categories_limit, restaurants_limit, items_limit = 2, 2, 2
     cities = ["Emeryville", "Oakland", "Berkeley", "Alameda", "Albany"]
     categories_limit, restaurants_limit = None, None
-    num_cpus = 20
-    sleep_sec = num_cpus * 0.5
+    num_cpus = 10
+    sleep_sec = num_cpus * 0.2
 
     print(
         f"Starting the flow with cities {cities}, {categories_limit} categories, and {restaurants_limit} restaurants per restaurant for the DB."

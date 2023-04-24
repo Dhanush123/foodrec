@@ -7,6 +7,7 @@ from selenium.webdriver.chrome.options import Options
 
 DEFAULT_SLEEP_SEC = 10
 TASK_TIMEOUT_SECONDS = 60
+REQUEST_GET_TIMEOUT_SECS = 60
 
 BASE_UE_URL = "https://www.ubereats.com"
 BASE_HEADERS = {
