@@ -11,3 +11,7 @@ alembic/ is for the SQLAlchemy ORM since all info from the flows is saved to a S
 utils/ contains various util methods and DB schemas
 
 Tech stack: Prefect, SQLite, SQLAlchemy, requests, Ray (to parallelize Prefect tasks), scikit-learn, nltk, pandas, numpy, matplotlib, seaborn
+
+TODOs:
+- Scrape meat recipes too so the scoring can be much more accurate with a supervised machine learning approach
+- Serve the predictions and integrate with Slack
